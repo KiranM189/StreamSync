@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+../syncnet_python/output/temp/pyframes/my_test_run
