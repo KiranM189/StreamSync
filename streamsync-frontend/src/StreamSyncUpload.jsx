@@ -127,51 +127,51 @@ export default function StreamSyncUpload() {
     if (audioRef.current) audioRef.current.pause();
   }
 
-  async function handleUpload() {
-    if (!file) return setError("Please choose a file first.");
-    setError("");
-    setUploading(true);
-    setProgress(0);
-    setMessage("");
+  // In your React Upload Component
+const handleUpload = async () => {
+    // 1. Use the 'file' state directly. Do not accept it as an argument.
+    if (!file) {
+      alert("Please select a file first.");
+      return;
+    }
 
-    // We will use XMLHttpRequest to get progress events
-    const fd = new FormData();
-    fd.append("video", file);
-    fd.append("offset_ms", String(offsetMs));
+    setUploading(true);
+    setMessage("Uploading and processing...");
+    setProgress(10); // visual feedback
+
+    const formData = new FormData();
+    // 2. Append the actual file object from state
+    formData.append("video", file);
 
     try {
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/upload");
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const p = Math.round((e.loaded / e.total) * 100);
-            setProgress(p);
-          }
-        };
-        xhr.onload = () => {
-          setUploading(false);
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setMessage("Upload successful. We'll process your file and return results by email or on the results page.");
-            resolve(xhr.responseText);
-          } else {
-            setError(`Upload failed: ${xhr.status} ${xhr.statusText}`);
-            reject(new Error(xhr.responseText || "Upload error"));
-          }
-        };
-        xhr.onerror = () => {
-          setUploading(false);
-          setError("Network error during upload.");
-          reject(new Error("Network error"));
-        };
-        xhr.send(fd);
+      const response = await fetch("http://localhost:5000/api/upload", {
+        method: "POST",
+        body: formData,
+        // Note: Do NOT set 'Content-Type' header here. 
+        // fetch+FormData sets the boundary automatically.
       });
-    } catch (err) {
-      console.error(err);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+
+      console.log("Success:", data);
+      setProgress(100);
+      setMessage("Analysis Complete!");
+      
+      // 3. Show the result
+      alert(`Sync Complete!\nOffset: ${data.offset_frames} frames\nConfidence: ${data.confidence}`);
+
+    } catch (error) {
+      console.error("Upload Error:", error);
+      setError("Failed to connect to the server or process the video.");
+      setUploading(false);
     } finally {
       setUploading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
