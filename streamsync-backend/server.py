@@ -17,10 +17,44 @@ def imresize(arr, size):
     if isinstance(size, float):
         new_size = (int(img.width * size), int(img.height * size))
     elif isinstance(size, tuple):
-        new_size = (size[1], size[0]) 
+        new_size = (size[1], size[0])
     else:
         new_size = size
     return np.array(img.resize(new_size, Image.BICUBIC))
+
+# Extract FPS to get the correct Offset
+def get_video_fps(path):
+    """
+    Extract FPS from video using ffmpeg metadata.
+    Returns float FPS or None.
+    """
+    try:
+        cmd = ["ffmpeg", "-i", path]
+        result = subprocess.run(
+            cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        output = result.stderr
+
+        patterns = [
+            r"(\d+(?:\.\d+)?)\s*fps",
+            r"(\d+(?:\.\d+)?)\s*tbr",
+            r"(\d+(?:\.\d+)?)\s*tbn",
+        ]
+
+        for p in patterns:
+            match = re.search(p, output)
+            if match:
+                return float(match.group(1))
+
+        return None
+
+    except Exception as e:
+        print("FPS error:", e)
+        return None
+
 
 # Inject dummy scipy.misc module
 misc = types.ModuleType('scipy.misc')
@@ -59,7 +93,7 @@ def health_check():
 def process_video():
     if 'video' not in request.files:
         return jsonify({"error": "No video file provided"}), 400
-    
+
     file = request.files['video']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
@@ -70,21 +104,21 @@ def process_video():
     file.save(file_path)
 
     reference_name = f"run_{os.path.splitext(filename)[0]}"
-    
+
     print(f"Processing {filename} with reference {reference_name}...")
 
     try:
         # 1. Run Pipeline (Face Detect + Audio Split)
         # We use the current python executable to ensure we stay in the conda env
-        python_exe = sys.executable 
-        
+        python_exe = sys.executable
+
         pipeline_cmd = [
             python_exe, "run_pipeline.py",
             "--videofile", file_path,
             "--reference", reference_name,
             "--data_dir", os.path.join(OUTPUT_FOLDER, "temp")
         ]
-        
+
         print("Running pipeline step...")
         subprocess.run(pipeline_cmd, check=True)
 
@@ -93,7 +127,8 @@ def process_video():
             python_exe, "run_syncnet.py",
             "--videofile", file_path,
             "--reference", reference_name,
-            "--data_dir", os.path.join(OUTPUT_FOLDER, "temp")
+            "--data_dir", os.path.join(OUTPUT_FOLDER, "temp"),
+            "--vshift", "40"
         ]
 
         print("Running SyncNet step...")
@@ -108,6 +143,10 @@ def process_video():
         offset = int(offset_match.group(1)) if offset_match else None
         confidence = float(confidence_match.group(1)) if confidence_match else None
 
+        fps = get_video_fps(file_path)
+        calc_offset = (offset//fps)*1000
+        print(calc_offset)
+
         if offset is None:
             return jsonify({"error": "Could not calculate offset", "log": output_log}), 500
 
@@ -115,6 +154,7 @@ def process_video():
             "filename": filename,
             "offset_frames": offset,
             "confidence": confidence,
+            "offsetMs": calc_offset,
             "status": "success"
         })
 
